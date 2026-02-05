@@ -12,25 +12,17 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import numpy as np
 
-# ==========================================
-# Device
-# ==========================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 torch.manual_seed(123)
 
-# ==========================================
-# Neural Network
-# ==========================================
 class FCN(nn.Module):
     def __init__(self, N_INPUT=2, N_OUTPUT=1, N_HIDDEN=32, N_LAYERS=3):
         super().__init__()
         self.act = nn.Tanh()
         self.input = nn.Linear(N_INPUT, N_HIDDEN)
-        self.hidden = nn.ModuleList(
-            [nn.Linear(N_HIDDEN, N_HIDDEN) for _ in range(N_LAYERS - 1)]
-        )
+        self.hidden = nn.ModuleList([nn.Linear(N_HIDDEN, N_HIDDEN) for _ in range(N_LAYERS - 1)])
         self.output = nn.Linear(N_HIDDEN, N_OUTPUT)
 
     def forward(self, x):
@@ -39,46 +31,27 @@ class FCN(nn.Module):
             h = self.act(layer(h))
         return self.output(h)
 
-# ==========================================
-# HARD BC Ansatz (The "Soft Switch")
-# ==========================================
 def solution(model, xy):
     x = xy[:, 0:1]
     y = xy[:, 1:2]
-
-    # steepness: controls how sharp the transition is at the top corners
     steepness = 20.0
-
-    # 1. Boundary Forcing Term
     # y=1 -> 1 (due to y term)
     # x=0 -> 0 (due to tanh(kx))
     # x=1 -> 0 (due to tanh(k(1-x)))
     boundary_term = y * torch.tanh(steepness * x) * torch.tanh(steepness * (1.0 - x))
-
-    # 2. Distance Function
-    # Zero on ALL boundaries so the NN doesn't interfere with BCs
     dist_function = x * (1.0 - x) * y * (1.0 - y)
 
     return boundary_term + dist_function * model(xy)
-
-# ==========================================
-# PDE Sampling
-# ==========================================
+    
 def sample_pde(N, eps=0.05):
     xy = torch.rand(N, 2, device=device)
 
     # Exempt corners from training to avoid high gradients
-    mask = ~(
-        (xy[:,1] > 1 - eps) &
-        ((xy[:,0] < eps) | (xy[:,0] > 1 - eps))
-    )
+    mask = ~((xy[:,1] > 1 - eps) &((xy[:,0] < eps) | (xy[:,0] > 1 - eps)))
     xy = xy[mask]
     xy.requires_grad_(True)
     return xy
 
-# ==========================================
-# Helper: Boundary Plotter
-# ==========================================
 def plot_boundaries(model, epoch, current_loss):
     """Generates 4 subplots for boundaries + Shows Loss in Title"""
 
@@ -86,7 +59,6 @@ def plot_boundaries(model, epoch, current_loss):
     zeros = torch.zeros_like(s)
     ones = torch.ones_like(s)
 
-    # Define boundaries
     xy_top = torch.cat([s, ones], dim=1)      # y=1
     xy_bottom = torch.cat([s, zeros], dim=1)  # y=0
     xy_left = torch.cat([zeros, s], dim=1)    # x=0
@@ -102,7 +74,6 @@ def plot_boundaries(model, epoch, current_loss):
 
     fig, axs = plt.subplots(2, 2, figsize=(10, 6))
 
-    # Title with Loss
     loss_str = f"{current_loss:.3e}" if current_loss is not None else "Init"
     fig.suptitle(f'Epoch {epoch} | PDE Loss: {loss_str}', fontsize=16, fontweight='bold')
 
@@ -134,16 +105,10 @@ def plot_boundaries(model, epoch, current_loss):
 
     plt.tight_layout()
     plt.show()
-
-# ==========================================
-# Model Setup
-# ==========================================
+    
 model = FCN().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=5e-3)
 
-# ==========================================
-# Loss Function
-# ==========================================
 def loss_fn():
     xy = sample_pde(4000)
     T = solution(model, xy)
@@ -156,9 +121,6 @@ def loss_fn():
 
     return torch.mean((Txx + Tyy)**2)
 
-# ==========================================
-# Training Loop
-# ==========================================
 epochs = 11000
 
 print("Starting training...")
@@ -175,9 +137,6 @@ for epoch in range(1, epochs + 1):
         print(f"Epoch {epoch:5d} | PDE Loss = {loss.item():.5e}")
         plot_boundaries(model, epoch, loss.item())
 
-# ==========================================
-# Final Contour Plot
-# ==========================================
 x = np.linspace(0, 1, 100)
 y = np.linspace(0, 1, 100)
 X, Y = np.meshgrid(x, y)
